@@ -431,3 +431,532 @@ psql -d versys -U marcus
 
 ## RESTfull сервіс для управління даними
 
+### Схема бази даних
+> schema.prisma
+```prisma
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int            @id @default(autoincrement())
+  login         String         @unique @db.VarChar(30)
+  password      String         @db.VarChar(50)
+  email         String?        @unique @db.VarChar(40)
+  phone         String?        @unique @db.VarChar(20)
+  avatar        String?        @db.VarChar(200)
+  systemRole    UserSystemRole @map("system_role")
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt     DateTime?      @updatedAt @map("updated_at") @db.Timestamp()
+  members       Member[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Message {
+  id            Int            @id @default(autoincrement())
+  content       String         @db.VarChar(240)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamp()
+  sheduledAt    DateTime       @map("sheduled_at") @db.Timestamp()
+  notifications Notification[]
+
+  @@map("messages")
+}
+
+model Notification {
+  userId    Int     @map("user_id")
+  messageId Int     @map("message_id")
+  users     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@map("notifications")
+}
+
+model Project {
+  id          Int           @id @default(autoincrement())
+  title       String        @unique @db.VarChar(50)
+  status      ProjectStatus @default(inactive)
+  startDate   DateTime      @map("start_date") @db.Timestamp()
+  endDate     DateTime?     @map("end_date") @db.Timestamp()
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt   DateTime?     @updatedAt @map("updated_at") @db.Timestamp()
+  logo        String?       @db.VarChar(200)
+  description String?       @db.VarChar(4000)
+  members     Member[]
+  tasks       Task[]
+
+  @@map("projects")
+}
+
+model Roles {
+  id      Int      @id @default(autoincrement())
+  name    String   @unique @db.VarChar(45)
+  grants  Grant[]
+  members Member[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id        Int      @id @default(autoincrement())
+  rule      String   @unique @db.VarChar(45)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp()
+  grants    Grant[]
+
+  @@map("permissions")
+}
+
+model Grant {
+  roleId       Int        @map("role_id")
+  permissionId Int        @map("permission_id")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamp()
+  roles        Roles      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissions  Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("grants")
+}
+
+model Member {
+  id           Int           @id @default(autoincrement())
+  userId       Int           @map("user_id")
+  projectId    Int           @map("project_id")
+  roleId       Int           @map("role_id")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt    DateTime?     @updatedAt @map("updated_at") @db.Timestamp()
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  roles        Roles         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  participants Participant[]
+
+  @@unique([userId, projectId])
+  @@map("members")
+}
+
+model Task {
+  id           Int           @id @default(autoincrement())
+  title        String        @db.VarChar(50)
+  status       String        @db.VarChar(50)
+  projectId    Int           @map("project_id")
+  description  String?       @db.VarChar(500)
+  deadline     DateTime?     @db.Timestamp()
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt    DateTime?     @updatedAt @map("updated_at") @db.Timestamp()
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  participants Participant[]
+  tags         Tag[]
+  attachments  Attachment[]
+  Reviews      Review[]
+
+  @@index([projectId])
+  @@map("tasks")
+}
+
+model Participant {
+  id        Int             @id @default(autoincrement())
+  memberId  Int             @map("member_id")
+  taskId    Int             @map("task_id")
+  role      ParticipantRole
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamp()
+  members   Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  tasks     Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  Reviews   Review[]
+
+  @@unique([memberId, taskId])
+  @@map("participants")
+}
+
+model Label {
+  id    Int    @id @default(autoincrement())
+  name  String @unique @db.VarChar(30)
+  color String @db.VarChar(15)
+  tags  Tag[]
+
+  @@map("labels")
+}
+
+model Tag {
+  labelId Int   @map("label_id")
+  taskId  Int   @map("task_id")
+  labels  Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  tasks   Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([labelId, taskId])
+  @@map("tags")
+}
+
+model Attachment {
+  id        Int      @id @default(autoincrement())
+  url       String   @db.VarChar(200)
+  format    String   @db.VarChar(15)
+  taskId    Int      @map("task_id")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamp()
+  tasks     Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@map("attachments")
+}
+
+model Review {
+  id            Int         @id @default(autoincrement())
+  taskId        Int         @map("task_id")
+  participantId Int         @map("participant_id")
+  repliedTo     Int?        @map("replied_to")
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamp()
+  updatedAt     DateTime?   @updatedAt @map("updated_at") @db.Timestamp()
+  content       String      @db.VarChar(1000)
+  tasks         Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  participants  Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  reply         Review?     @relation("ReviewToReview", fields: [repliedTo], references: [id], onDelete: Cascade)
+  reviews       Review[]    @relation("ReviewToReview")
+
+  @@index([taskId])
+  @@map("reviews")
+}
+
+enum UserSystemRole {
+  user
+  admin
+
+  @@map("user_system_role")
+}
+
+enum ProjectStatus {
+  active
+  inactive
+
+  @@map("project_status")
+}
+
+enum ParticipantRole {
+  author
+  assignee
+  reviewer
+  participant
+
+  @@map("participant_role")
+}
+```
+
+### Запуск серверу
+> main.ts
+```ts
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+	app.useGlobalPipes(new ValidationPipe({
+		whitelist: true,
+	}));
+  await app.listen(3000);
+}
+bootstrap();
+```
+
+### Головний модуль проєкту
+> app.module.ts
+```ts
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+
+import { ProjectModule } from './project/project.module';
+import { PrismaModule } from './prisma/prisma.module';
+
+
+@Module({
+  imports: [
+		ConfigModule.forRoot({
+				isGlobal: true,
+			}), 
+		PrismaModule, 
+		ProjectModule
+	],
+})
+export class AppModule {}
+```
+
+### Модуль ORM Prisma
+> prisma.module.ts
+```ts
+import { Global, Module } from '@nestjs/common';
+
+import { PrismaService } from './prisma.service';
+
+@Global()
+@Module({
+  providers: [PrismaService],
+	exports: [PrismaService]
+})
+export class PrismaModule {}
+```
+
+### Бізнес-логіка ORM Prisma (підключення до бази даних)
+> prisma.service.ts
+```ts
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PrismaClient } from '@prisma/client';
+
+@Injectable()
+export class PrismaService extends PrismaClient {
+	constructor(private config: ConfigService){
+		super({
+			datasources: {
+				db:  {
+					url: config.get("DATABASE_URL")
+				}
+			}
+		});
+	}
+}
+```
+
+### Модуль сутності Проєкт(Project)
+> project.module.ts
+```ts
+import { Module } from '@nestjs/common';
+
+import { ProjectController } from './project.controller';
+import { ProjectService } from './project.service';
+
+@Module({
+	controllers: [ProjectController],
+	providers: [ProjectService]
+})
+export class ProjectModule {}
+```
+
+### Опис інтерфейсів доступу до сутності Проєкт(Project)
+> project.dto.ts
+```ts
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+	IsDateString,
+  MaxLength,
+} from 'class-validator';
+
+import { ProjectStatus } from '@prisma/client';
+
+class ProjectCreateDTO	 {
+	@IsNotEmpty()
+  @IsString()
+  @MaxLength(50)
+  title: string;
+
+  @IsOptional()
+  @IsEnum(ProjectStatus)
+  status?: ProjectStatus;
+
+  @IsNotEmpty()
+  @IsDateString()
+  startDate: string;
+
+  @IsOptional()
+  @IsDateString()
+  endDate?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  logo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  description?: string;
+}
+
+class ProjectUpdateDTO	 {
+	@IsOptional()
+  @IsString()
+  @MaxLength(50)
+  title?: string;
+
+  @IsOptional()
+  @IsEnum(ProjectStatus)
+  status?: ProjectStatus;
+
+  @IsOptional()
+  @IsDateString()
+  start_date?: string;
+
+  @IsOptional()
+  @IsDateString()
+  end_date?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  logo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  description?: string;
+}
+
+export { ProjectCreateDTO, ProjectUpdateDTO };
+```
+
+### Контролер доступу до сутності Проєкт(Project)
+> project.controller.ts
+```ts
+import { Controller, ParseIntPipe, Body, Param, Post, Get, Patch, Delete } from '@nestjs/common';
+
+import { ProjectService } from './project.service';
+import { ProjectCreateDTO, ProjectUpdateDTO } from './project.dto';
+
+@Controller('projects')
+export class ProjectController{
+	constructor(private projectService: ProjectService){}
+
+	@Post('create')
+	async create(@Body() dto: ProjectCreateDTO){
+		return await this.projectService.create(dto);
+	}
+
+	@Get(':id')
+	async find(@Param('id', ParseIntPipe) id: number){
+		return await this.projectService.find(id);
+	}
+
+	@Get()
+	async findAll(){
+		return await this.projectService.findAll();
+	}
+
+	@Patch(':id')
+	async update(@Param('id', ParseIntPipe) id: number, @Body() dto: ProjectUpdateDTO,){
+		return await this.projectService.update(id, dto);
+	}
+
+	@Delete(':id')
+	async delete(@Param('id', ParseIntPipe) id: number){
+		return await this.projectService.delete(id);
+	}
+}
+```
+
+### Бізнес-логіка сутності Проєкт(Project)
+> project.service.ts
+```ts
+import { ForbiddenException, NotFoundException, Injectable } from '@nestjs/common';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+
+import { PrismaService } from 'src/prisma/prisma.service';
+import { ProjectCreateDTO, ProjectUpdateDTO } from './project.dto';
+
+const errorCodes = {
+	'NOT_UNIQUE_VALUE': 'P2002',
+	'NOT_FOUND': 'P2025',
+}
+
+@Injectable({})
+export class ProjectService{
+	constructor(private prisma: PrismaService){}
+	
+	async create(dto: ProjectCreateDTO){
+		try {
+			const project = await this.prisma.project.create({
+				data: {
+					title: dto.title,
+        	status: dto.status,
+        	startDate: dto.startDate ? new Date(dto.startDate) : null,
+        	endDate: dto.endDate ? new Date(dto.endDate) : null,
+        	logo: dto.logo,
+        	description: dto.description,
+				}
+			})
+			return project;
+		} catch(e){
+				if (e instanceof PrismaClientKnownRequestError){
+					if (e.code === errorCodes['NOT_UNIQUE_VALUE']) {
+						throw new ForbiddenException(`Project with ${dto.title} title already exists!`)
+					}
+				}
+			throw e;
+		}
+	};
+
+	async find(id: number){
+		try {		
+			const project = await this.prisma.project.findUniqueOrThrow({
+				where: {
+					id: id,
+				}
+			})
+			return project;
+		} catch(e){
+				if (e instanceof PrismaClientKnownRequestError){
+					if (e.code === errorCodes['NOT_FOUND']) {
+						throw new NotFoundException(`Project with id: ${id} is not found!`)
+					}
+				}
+			throw e;
+		}
+	};
+
+	async findAll(){
+		const projects = await this.prisma.project.findMany({})
+		return projects;
+	};
+
+	async update(id: number, dto: ProjectUpdateDTO){
+		await this.find(id);
+		try {
+			const project = await this.prisma.project.update({
+				where: {
+        	id: id,
+      	},
+      	data: {
+        	...dto,
+        	updatedAt: new Date(),
+      	},
+			})
+			return project;
+		} catch(e){
+				if (e instanceof PrismaClientKnownRequestError){
+					if (e.code === errorCodes['NOT_UNIQUE_VALUE']) {
+						throw new ForbiddenException(`Project with ${dto.title} title already exists!`)
+					}
+				}
+			throw e;
+		}
+	};
+
+	async delete(id: number){
+		try {
+			const project = await this.find(id);
+			await this.prisma.project.delete({
+				where: {
+					id: id
+				}
+			})
+			return `Project was deleted:\n${JSON.stringify(project)}`
+		} catch(e){
+				if (e instanceof PrismaClientKnownRequestError){
+					if (e.code === errorCodes['NOT_FOUND']) {
+						throw new NotFoundException(`Project with id: ${id} is not found!`)
+					}
+				}
+			throw e;
+		}
+	};
+}
+```
